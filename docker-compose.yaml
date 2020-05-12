@@ -1,0 +1,161 @@
+version: '3'
+
+services:
+
+  rabbitmq:
+    image: 'rabbitmq:3.8-management-alpine'
+    container_name: rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    volumes:
+      - './rabbitmq/rabbitmq_data:/var/lib/rabbitmq/mnesia'
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin 
+      - RABBITMQ_DEFAULT_PASS=admin
+    networks:
+      - micro-live
+
+  micro-live-manager-backend:
+    build: ./micro-live-manager/backend
+    entrypoint: ./.docker/entrypoint.sh
+    container_name: micro-live-manager-backend
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      - 3000:3000
+      - 9000:9000
+      - 5000:5000
+    volumes:
+      - ./micro-live-manager/backend:/home/node/app
+    networks:
+      - micro-live
+    depends_on: 
+      - micro-live-manager-db
+      - micro-live-manager-redis
+
+  micro-live-manager-frontend:
+    build: ./micro-live-manager/frontend
+    entrypoint: ./.docker/entrypoint.sh
+    container_name: micro-live-manager-frontend
+    tty: true
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      - 3001:3000
+    volumes:
+      - ./micro-live-manager/frontend:/home/node/app
+    networks:
+      - micro-live
+    depends_on: 
+      - micro-live-manager-backend
+
+  micro-live-manager-db:
+    image: mysql:5.7
+    command: --innodb-use-native-aio=0
+    container_name: micro-live-manager-db
+    restart: always
+    tty: true
+    ports:
+      - 33006:3306
+    volumes:
+      - ./micro-live-manager/backend/.docker/dbdata:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_USER=root
+      - MYSQL_DATABASE=micro_live_manager
+    networks:
+      - micro-live
+
+  micro-live-manager-redis:
+    image: redis:alpine
+    container_name: micro-live-manager-redis
+    volumes:
+      - ./micro-live-manager/backend/.docker/redisdata:/data
+    networks:
+      - micro-live
+
+  micro-live-streaming:
+    build: ./micro-live-streaming
+    container_name: micro-live-streaming
+    entrypoint: ./.docker/entrypoint.sh
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      - 3002:3000
+    volumes:
+      - ./micro-live-streaming:/app
+    tty: true
+
+  micro-live-chat-app:
+    build: ./micro-live-chat
+    entrypoint: ./.docker/entrypoint.sh
+    container_name: micro-live-chat-app
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      - 3003:3003
+    volumes:
+      - ./micro-live-chat:/home/node/app
+    networks:
+      - micro-live
+    depends_on: 
+      - micro-live-chat-redis
+      - micro-live-chat-db
+
+  micro-live-chat-redis:
+    image: redis:alpine
+    container_name: micro-live-chat-redis
+    volumes:
+      - ./micro-live-chat/.docker/redisdata:/data
+    networks:
+      - micro-live
+
+  micro-live-chat-db:
+    image: mysql:5.7
+    command: --innodb-use-native-aio=0
+    container_name: micro-live-chat-db
+    restart: always
+    tty: true
+    ports:
+      - 33007:3306
+    volumes:
+      - ./micro-live-chat/.docker/dbdata:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_USER=root
+      - MYSQL_DATABASE=micro_live_chat
+    networks:
+      - micro-live
+
+  micro-codebot:
+    build: ./codebot
+    container_name: micro-codebot
+    ports:
+      - 50051:50051
+    environment:
+      WAIT_HOSTS: micro-codebot-db:5432
+      WAIT_HOSTS_TIMEOUT: 300
+    networks:
+      - micro-live
+    depends_on:
+      -  micro-codebot-db
+
+  micro-codebot-db:
+    image: postgres:9.4
+    #restart: always
+    tty: true
+    volumes:
+      - ./codebot/pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=codebot
+    ports:
+      - "5433:5432"
+    networks:
+      - micro-live
+
+networks:
+  micro-live:
+    driver: bridge
